@@ -96,9 +96,24 @@ def open_table_window(title: str, rows: List[Dict[str, object]], inputs: Dict[st
         Mapping of summary output names (e.g. IRR) to values.  Displayed after
         the inputs.
     """
+
     win = tk.Toplevel()
     win.title(title)
     win.configure(bg=BG)
+
+    # --- Window positioning (relative to main window) ---
+    root = win.master
+    root.update_idletasks()
+
+    main_x = root.winfo_x()
+    main_y = root.winfo_y()
+    main_w = root.winfo_width()
+
+    if "Ltd" in title:
+        win.geometry(f"+{main_x + main_w + 20}+{main_y + 700}")
+    elif "Personal" in title:
+        win.geometry(f"+{main_x + main_w + 670}+{main_y + 700}")
+
 
     # Treeview for the table of year‑by‑year profits
     tree = ttk.Treeview(win, columns=("year", "nom", "real"), show="headings")
@@ -120,6 +135,28 @@ def open_table_window(title: str, rows: List[Dict[str, object]], inputs: Dict[st
         real_str = f"{real:,.0f}" if isinstance(real, (int, float)) else str(real)
         tree.insert("", "end", values=(year, nom_str, real_str))
 
+    # Auto-scroll table to last row (final year)
+    def scroll_to_end_slow():
+        steps = 20
+        delay = 30  # ms per step
+
+        def scroll_down(i=0):
+            frac = min(1.0, i / steps)
+            tree.yview_moveto(frac)
+            if i < steps:
+                tree.after(delay, scroll_down, i + 1)
+            else:
+                tree.after(300, scroll_up)  # pause at bottom
+
+        def scroll_up(i=0):
+            frac = max(0.0, 1.0 - (i / steps))
+            tree.yview_moveto(frac)
+            if i < steps:
+                tree.after(delay, scroll_up, i + 1)
+
+        scroll_down()
+
+
     # Text area for inputs and outputs summary
     meta = tk.Text(win, bg=PANEL, fg=FG, insertbackground=FG, font=("JetBrains Mono", 10), height=14)
     meta.pack(fill="x", padx=10, pady=(0, 10))
@@ -129,6 +166,48 @@ def open_table_window(title: str, rows: List[Dict[str, object]], inputs: Dict[st
     meta.insert("end", "\nOUTPUTS\n")
     for k, v in outputs.items():
         meta.insert("end", f"  {k}: {v}\n")
+        meta.insert("end", "\nOUTPUTS\n")
+    for k, v in outputs.items():
+        meta.insert("end", f"  {k}: {v}\n")
+
+    # <<< INSERT HERE >>>
+    meta.config(state="disabled")
+
+    def scroll_meta_slow():
+        steps = 20
+        delay = 30
+
+        def scroll_down(i=0):
+            frac = min(1.0, i / steps)
+            meta.yview_moveto(frac)
+            if i < steps:
+                meta.after(delay, scroll_down, i + 1)
+            else:
+                meta.after(300, scroll_up)
+
+        def scroll_up(i=0):
+            frac = max(0.0, 1.0 - (i / steps))
+            meta.yview_moveto(frac)
+            if i < steps:
+                meta.after(delay, scroll_up, i + 1)
+
+        scroll_down()
+
+    has_scrolled = {"done": False}
+
+    def on_focus(_):
+        if has_scrolled["done"]:
+            return
+        has_scrolled["done"] = True
+
+        scroll_to_end_slow()
+        scroll_meta_slow()
+
+        # Disable future auto-scrolls
+        win.unbind("<FocusIn>")
+
+    # Trigger auto-scroll only once, on first focus
+    win.bind("<FocusIn>", on_focus)
     meta.config(state="disabled")
 
 
@@ -168,7 +247,7 @@ class InvestmentApp:
 
         # Set a reasonable default size so that all input groups are visible without scrolling.
         # This can be adjusted later by the user via window resizing.
-        self.root.geometry("1200x900")
+        self.root.geometry("1200x1200")
 
         # Apply global dark theme colours
         self.root.configure(bg=BG)
@@ -225,7 +304,7 @@ class InvestmentApp:
         self.output_text.pack(fill=tk.X, expand=False, padx=10, pady=5)
 
         # Figure for chart.  The canvas will be created lazily in a pop‑out window on demand.
-        self.figure = Figure(figsize=(8, 4), dpi=100)
+        self.figure = Figure(figsize=(12, 6), dpi=100)
         self.ax = self.figure.add_subplot(111)
         # Apply dark theme to the Matplotlib figure
         self.figure.patch.set_facecolor(BG)
@@ -246,6 +325,12 @@ class InvestmentApp:
             self.graph_window = tk.Toplevel(self.root)
             self.graph_window.title("Profit trajectory with uncertainty bands")
             self.graph_window.configure(bg=BG)
+
+            # Position graph to the right of main window
+            self.root.update_idletasks()
+            x = self.root.winfo_x() + self.root.winfo_width() + 20
+            y = self.root.winfo_y()
+            self.graph_window.geometry(f"+{x}+{y}")
             # Create a fresh canvas attached to the figure
             self.canvas = FigureCanvasTkAgg(self.figure, master=self.graph_window)
             canvas_widget = self.canvas.get_tk_widget()
